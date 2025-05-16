@@ -12,9 +12,21 @@ AV.init({
   serverURL: LEANCLOUD_SERVER_URL
 });
 
+// 清除所有本地库存和历史数据（正式版初始化）
+localStorage.removeItem('inventory');
+localStorage.removeItem('historyRecords');
+inventory = {};
+historyRecords = [];
+
 // 清理localStorage中的脏数据（如果有）
 try {
-    const inv = JSON.parse(localStorage.getItem('inventory'));
+    let inv = JSON.parse(localStorage.getItem('inventory'));
+    // 如果是数组，清空并提示
+    if (Array.isArray(inv)) {
+        alert('检测到本地库存数据异常（为数组），已自动清空，请重新录入！');
+        localStorage.removeItem('inventory');
+        inv = {};
+    }
     if (inv && typeof inv === 'object') {
         for (const k in inv) {
             if (!inv[k] || typeof inv[k] !== 'object') {
@@ -27,10 +39,31 @@ try {
     localStorage.removeItem('inventory');
 }
 
+// 历史出入库单据记录
+let historyRecords = JSON.parse(localStorage.getItem('historyRecords')) || [];
+
+// 记录历史单据
+function addHistoryRecord({type, code, name, quantity, remarks}) {
+    historyRecords.push({
+        time: new Date().toISOString(),
+        type,
+        code,
+        name,
+        quantity,
+        remarks
+    });
+    localStorage.setItem('historyRecords', JSON.stringify(historyRecords));
+    saveHistoryToCloud(); // 自动同步到云端
+}
+
 // 保存库存到云端
 function saveToCloud() {
-    const Inventory = AV.Object.extend('Inventory');
-    const query = new AV.Query('Inventory');
+    if (Array.isArray(inventory)) {
+        alert('库存数据异常（为数组），请清空本地和云端数据后重新录入！');
+        return;
+    }
+    const Inventory = AV.Object.extend('Inventory2');
+    const query = new AV.Query('Inventory2');
     query.first().then(obj => {
         if (obj) {
             obj.set('data', inventory);
@@ -38,7 +71,6 @@ function saveToCloud() {
         } else {
             const inv = new Inventory();
             inv.set('data', inventory);
-            // 设置ACL为所有人可读写
             const acl = new AV.ACL();
             acl.setPublicReadAccess(true);
             acl.setPublicWriteAccess(true);
@@ -48,16 +80,30 @@ function saveToCloud() {
     }).then(() => {
         alert('库存已保存到云端！');
     }).catch(err => {
-        alert('保存失败：' + err.message);
+        alert('保存失败：' + err.message + '\n请确保云端Inventory2表已清空所有数据和data字段！');
     });
 }
 
 // 从云端加载库存
 function loadFromCloud() {
-    const query = new AV.Query('Inventory');
+    const query = new AV.Query('Inventory2');
     query.first().then(obj => {
         if (obj) {
-            inventory = obj.get('data') || {};
+            let data = obj.get('data') || {};
+            if (Array.isArray(data)) {
+                const objData = {};
+                data.forEach(item => {
+                    if (item && item.productCode) {
+                        objData[item.productCode] = {
+                            name: item.productName || '',
+                            quantity: item.quantity || 0,
+                            lastUpdate: item.lastUpdate || new Date().toISOString()
+                        };
+                    }
+                });
+                data = objData;
+            }
+            inventory = data;
             localStorage.setItem('inventory', JSON.stringify(inventory));
             displayInventory();
             alert('库存已从云端加载！');
@@ -91,7 +137,6 @@ function switchTab(tab) {
 // 表单提交处理
 document.getElementById('inventoryForm').addEventListener('submit', function(e) {
     e.preventDefault();
-    
     const operationType = document.getElementById('operationType').value;
     const productCode = document.getElementById('productCode').value;
     const productName = document.getElementById('productName').value;
@@ -101,16 +146,21 @@ document.getElementById('inventoryForm').addEventListener('submit', function(e) 
         return;
     }
     const remarks = document.getElementById('remarks').value;
-    
-    processInventoryOperation(operationType, productCode, productName, quantity, remarks);
-    
-    // 清空表单
-    this.reset();
-    
-    // 刷新显示
-    displayInventory();
-    
-    alert('操作成功！');
+    const success = processInventoryOperation(operationType, productCode, productName, quantity, remarks);
+    if (success) {
+        addHistoryRecord({
+            type: operationType === 'in' ? '入库' : '出库',
+            code: productCode,
+            name: productName,
+            quantity,
+            remarks
+        });
+        this.reset();
+        displayInventory();
+        saveToCloud();
+        alert('操作成功！');
+        displayHistoryRecords();
+    }
 });
 
 // 处理库存操作
@@ -148,27 +198,24 @@ function processInventoryOperation(operationType, productCode, productName, quan
 function processBatchData() {
     const operationType = document.getElementById('batchOperationType').value;
     const batchData = document.getElementById('batchData').value.trim();
-    
     if (!batchData) {
         alert('请输入要导入的数据！');
         return;
     }
-    
+    if (Array.isArray(inventory)) {
+        inventory = {};
+    }
     const lines = batchData.split('\n');
     let successCount = 0;
     let failCount = 0;
     let firstLineIsHeader = false;
-    
-    // 检查首行是否为表头
     if (lines[0].includes('货品编码') && lines[0].includes('数量')) {
         firstLineIsHeader = true;
     }
-    
     for (let i = 0; i < lines.length; i++) {
         let line = lines[i].trim();
-        if (!line) continue; // 跳过空行
-        if (i === 0 && firstLineIsHeader) continue; // 跳过表头
-        // 支持制表符或逗号分隔
+        if (!line) continue;
+        if (i === 0 && firstLineIsHeader) continue;
         let parts = line.split(/\t|,/).map(item => item.trim());
         const [productCode, quantity, productName = '', remarks = ''] = parts;
         if (!productCode || !quantity || isNaN(Number(quantity))) {
@@ -183,33 +230,45 @@ function processBatchData() {
             remarks
         );
         if (success) {
+            addHistoryRecord({
+                type: operationType === 'in' ? '入库' : '出库',
+                code: productCode,
+                name: productName,
+                quantity: parseInt(quantity),
+                remarks
+            });
             successCount++;
         } else {
             failCount++;
         }
     }
-    // 刷新显示
     displayInventory();
-    // 清空输入框
     document.getElementById('batchData').value = '';
+    saveToCloud();
     alert(`批量导入完成！\n成功：${successCount}条\n失败：${failCount}条`);
+    displayHistoryRecords();
 }
 
-// 搜索库存
+// 支持模糊查询的库存查询
 function searchInventory() {
-    const searchCode = document.getElementById('searchCode').value.trim();
+    const keyword = document.getElementById('searchKeyword').value.trim().toLowerCase();
     const tbody = document.getElementById('inventoryTableBody');
     tbody.innerHTML = '';
-    
-    if (searchCode) {
-        // 搜索特定编码
-        if (inventory[searchCode]) {
-            addRowToTable(searchCode, inventory[searchCode]);
-        } else {
-            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">未找到该货品</td></tr>';
+    if (keyword) {
+        let found = false;
+        for (const code in inventory) {
+            const item = inventory[code];
+            if (!item) continue;
+            // 编码或名称包含关键字
+            if (code.toLowerCase().includes(keyword) || (item.name && item.name.toLowerCase().includes(keyword))) {
+                addRowToTable(code, item);
+                found = true;
+            }
+        }
+        if (!found) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">未找到相关货品</td></tr>';
         }
     } else {
-        // 显示所有库存
         displayInventory();
     }
 }
@@ -243,5 +302,109 @@ function addRowToTable(code, item) {
     tbody.appendChild(row);
 }
 
+// 历史单据渲染
+function displayHistoryRecords(records) {
+    const tbody = document.getElementById('historyTableBody');
+    tbody.innerHTML = '';
+    const data = records || historyRecords;
+    if (!data.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无历史记录</td></tr>';
+        return;
+    }
+    data.slice().reverse().forEach(item => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${item.time ? new Date(item.time).toLocaleString() : '-'}</td>
+            <td>${item.type}</td>
+            <td>${item.code}</td>
+            <td>${item.name || '-'}</td>
+            <td>${item.quantity}</td>
+            <td>${item.remarks || '-'}</td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+// 历史单据模糊查询
+function searchHistoryRecords() {
+    const keyword = document.getElementById('historyKeyword').value.trim().toLowerCase();
+    if (!keyword) {
+        displayHistoryRecords();
+        return;
+    }
+    const filtered = historyRecords.filter(item =>
+        (item.code && item.code.toLowerCase().includes(keyword)) ||
+        (item.name && item.name.toLowerCase().includes(keyword)) ||
+        (item.type && item.type.toLowerCase().includes(keyword)) ||
+        (item.remarks && item.remarks.toLowerCase().includes(keyword))
+    );
+    displayHistoryRecords(filtered);
+}
+
 // 页面加载时显示所有库存
-document.addEventListener('DOMContentLoaded', displayInventory); 
+document.addEventListener('DOMContentLoaded', displayInventory);
+
+// 页面加载时渲染历史记录
+document.addEventListener('DOMContentLoaded', () => {
+    displayInventory();
+    displayHistoryRecords();
+});
+
+// 保存历史记录到云端
+function saveHistoryToCloud() {
+    const History = AV.Object.extend('HistoryRecords');
+    const query = new AV.Query('HistoryRecords');
+    query.first().then(obj => {
+        if (obj) {
+            obj.set('data', historyRecords);
+            return obj.save();
+        } else {
+            const his = new History();
+            his.set('data', historyRecords);
+            const acl = new AV.ACL();
+            acl.setPublicReadAccess(true);
+            acl.setPublicWriteAccess(true);
+            his.setACL(acl);
+            return his.save();
+        }
+    }).then(() => {
+        alert('历史记录已保存到云端！');
+    }).catch(err => {
+        alert('保存失败：' + err.message + '\n请确保云端HistoryRecords表已清空所有数据和data字段！');
+    });
+}
+
+// 从云端加载历史记录
+function loadHistoryFromCloud() {
+    const query = new AV.Query('HistoryRecords');
+    query.first().then(obj => {
+        if (obj) {
+            let data = obj.get('data') || [];
+            if (!Array.isArray(data)) data = [];
+            historyRecords = data;
+            localStorage.setItem('historyRecords', JSON.stringify(historyRecords));
+            displayHistoryRecords();
+            alert('历史记录已从云端加载！');
+        } else {
+            alert('云端暂无历史记录数据！');
+        }
+    }).catch(err => {
+        alert('加载失败：' + err.message);
+    });
+}
+
+// 主模块切换逻辑
+function switchMainTab(tab) {
+    // 按钮高亮
+    document.querySelectorAll('.main-tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelector(`.main-tab-btn[onclick="switchMainTab('${tab}')"]`).classList.add('active');
+    // 模块显示
+    document.getElementById('inoutModule').style.display = (tab === 'inout') ? '' : 'none';
+    document.getElementById('inventoryModule').style.display = (tab === 'inventory') ? '' : 'none';
+    document.getElementById('historyModule').style.display = (tab === 'history') ? '' : 'none';
+}
+
+// 页面加载默认显示出入库操作模块
+document.addEventListener('DOMContentLoaded', function() {
+    switchMainTab('inout');
+}); 
