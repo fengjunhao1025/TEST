@@ -12,6 +12,21 @@ AV.init({
   serverURL: LEANCLOUD_SERVER_URL
 });
 
+// 清理localStorage中的脏数据（如果有）
+try {
+    const inv = JSON.parse(localStorage.getItem('inventory'));
+    if (inv && typeof inv === 'object') {
+        for (const k in inv) {
+            if (!inv[k] || typeof inv[k] !== 'object') {
+                delete inv[k];
+            }
+        }
+        localStorage.setItem('inventory', JSON.stringify(inv));
+    }
+} catch (e) {
+    localStorage.removeItem('inventory');
+}
+
 // 保存库存到云端
 function saveToCloud() {
     const Inventory = AV.Object.extend('Inventory');
@@ -81,6 +96,10 @@ document.getElementById('inventoryForm').addEventListener('submit', function(e) 
     const productCode = document.getElementById('productCode').value;
     const productName = document.getElementById('productName').value;
     const quantity = parseInt(document.getElementById('quantity').value);
+    if (quantity > 999999) {
+        alert('数量不能超过999999！');
+        return;
+    }
     const remarks = document.getElementById('remarks').value;
     
     processInventoryOperation(operationType, productCode, productName, quantity, remarks);
@@ -212,16 +231,15 @@ function displayInventory() {
 
 // 添加行到表格
 function addRowToTable(code, item) {
+    if (!item) return; // 防止item为null时报错
     const tbody = document.getElementById('inventoryTableBody');
     const row = document.createElement('tr');
-    
     row.innerHTML = `
         <td>${code}</td>
         <td>${item.name || '-'}</td>
         <td>${item.quantity}</td>
-        <td>${new Date(item.lastUpdate).toLocaleString()}</td>
+        <td>${item.lastUpdate ? new Date(item.lastUpdate).toLocaleString() : '-'}</td>
     `;
-    
     tbody.appendChild(row);
 }
 
