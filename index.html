@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>库存管理系统</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>库存管理系统</h1>
+        
+        <!-- 出入库表单 -->
+        <div class="form-section">
+            <h2>出入库操作</h2>
+            <div class="operation-tabs">
+                <button class="tab-btn active" onclick="switchTab('single')">单个操作</button>
+                <button class="tab-btn" onclick="switchTab('batch')">批量导入</button>
+            </div>
+            
+            <!-- 单个操作表单 -->
+            <form id="inventoryForm" class="tab-content active">
+                <div class="form-group">
+                    <label for="operationType">操作类型：</label>
+                    <select id="operationType" required>
+                        <option value="in">入库</option>
+                        <option value="out">出库</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="productCode">货品编码：</label>
+                    <input type="text" id="productCode" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="productName">货品名称：</label>
+                    <input type="text" id="productName">
+                </div>
+                
+                <div class="form-group">
+                    <label for="quantity">数量：</label>
+                    <input type="number" id="quantity" required min="1">
+                </div>
+                
+                <div class="form-group">
+                    <label for="remarks">备注：</label>
+                    <textarea id="remarks"></textarea>
+                </div>
+                
+                <button type="submit">提交</button>
+            </form>
+
+            <!-- 批量导入表单 -->
+            <div id="batchForm" class="tab-content">
+                <div class="form-group">
+                    <label for="batchOperationType">操作类型：</label>
+                    <select id="batchOperationType" required>
+                        <option value="in">入库</option>
+                        <option value="out">出库</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="batchData">从Excel复制数据（格式：货品编码,数量,货品名称,备注）：</label>
+                    <textarea id="batchData" placeholder="A001,100,商品1,备注1&#10;A002,200,商品2,备注2" rows="10"></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <button type="button" onclick="processBatchData()">批量导入</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 库存查询 -->
+        <div class="search-section">
+            <h2>库存查询</h2>
+            <div class="search-form">
+                <input type="text" id="searchCode" placeholder="输入货品编码查询">
+                <button onclick="searchInventory()">查询</button>
+            </div>
+            
+            <div class="inventory-table">
+                <table id="inventoryTable">
+                    <thead>
+                        <tr>
+                            <th>货品编码</th>
+                            <th>货品名称</th>
+                            <th>当前库存</th>
+                            <th>最后更新时间</th>
+                        </tr>
+                    </thead>
+                    <tbody id="inventoryTableBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html> 
