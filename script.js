@@ -1,27 +1,35 @@
 // 使用localStorage存储库存数据
 let inventory = JSON.parse(localStorage.getItem('inventory')) || {};
 
-// LeanCloud初始化（请填写你的AppID和AppKey）
+// LeanCloud中国区初始化
 const LEANCLOUD_APP_ID = '93RdX2hZAohYgqCfKcFPjIW4-gzGzoHsz';
 const LEANCLOUD_APP_KEY = 'Bb5xto5y0DLFsq3cbVZNgDU0';
+const LEANCLOUD_SERVER_URL = 'https://93rdx2hzaohygqcfkcfpjiw4.lc-cn-n1-shared.com';
+
 AV.init({
   appId: LEANCLOUD_APP_ID,
-  appKey: LEANCLOUD_APP_KEY
+  appKey: LEANCLOUD_APP_KEY,
+  serverURL: LEANCLOUD_SERVER_URL
 });
 
 // 保存库存到云端
 function saveToCloud() {
     const Inventory = AV.Object.extend('Inventory');
     const query = new AV.Query('Inventory');
-    query.get('main').then(obj => {
-        obj.set('data', inventory);
-        return obj.save();
-    }, err => {
-        // 如果没有则新建
-        const inv = new Inventory();
-        inv.id = 'main';
-        inv.set('data', inventory);
-        return inv.save();
+    query.first().then(obj => {
+        if (obj) {
+            obj.set('data', inventory);
+            return obj.save();
+        } else {
+            const inv = new Inventory();
+            inv.set('data', inventory);
+            // 设置ACL为所有人可读写
+            const acl = new AV.ACL();
+            acl.setPublicReadAccess(true);
+            acl.setPublicWriteAccess(true);
+            inv.setACL(acl);
+            return inv.save();
+        }
     }).then(() => {
         alert('库存已保存到云端！');
     }).catch(err => {
@@ -32,11 +40,15 @@ function saveToCloud() {
 // 从云端加载库存
 function loadFromCloud() {
     const query = new AV.Query('Inventory');
-    query.get('main').then(obj => {
-        inventory = obj.get('data') || {};
-        localStorage.setItem('inventory', JSON.stringify(inventory));
-        displayInventory();
-        alert('库存已从云端加载！');
+    query.first().then(obj => {
+        if (obj) {
+            inventory = obj.get('data') || {};
+            localStorage.setItem('inventory', JSON.stringify(inventory));
+            displayInventory();
+            alert('库存已从云端加载！');
+        } else {
+            alert('云端暂无库存数据！');
+        }
     }).catch(err => {
         alert('加载失败：' + err.message);
     });
