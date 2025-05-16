@@ -1,6 +1,47 @@
 // 使用localStorage存储库存数据
 let inventory = JSON.parse(localStorage.getItem('inventory')) || {};
 
+// LeanCloud初始化（请填写你的AppID和AppKey）
+const LEANCLOUD_APP_ID = '93RdX2hZAohYgqCfKcFPjIW4-gzGzoHsz';
+const LEANCLOUD_APP_KEY = 'Bb5xto5y0DLFsq3cbVZNgDU0';
+AV.init({
+  appId: LEANCLOUD_APP_ID,
+  appKey: LEANCLOUD_APP_KEY
+});
+
+// 保存库存到云端
+function saveToCloud() {
+    const Inventory = AV.Object.extend('Inventory');
+    const query = new AV.Query('Inventory');
+    query.get('main').then(obj => {
+        obj.set('data', inventory);
+        return obj.save();
+    }, err => {
+        // 如果没有则新建
+        const inv = new Inventory();
+        inv.id = 'main';
+        inv.set('data', inventory);
+        return inv.save();
+    }).then(() => {
+        alert('库存已保存到云端！');
+    }).catch(err => {
+        alert('保存失败：' + err.message);
+    });
+}
+
+// 从云端加载库存
+function loadFromCloud() {
+    const query = new AV.Query('Inventory');
+    query.get('main').then(obj => {
+        inventory = obj.get('data') || {};
+        localStorage.setItem('inventory', JSON.stringify(inventory));
+        displayInventory();
+        alert('库存已从云端加载！');
+    }).catch(err => {
+        alert('加载失败：' + err.message);
+    });
+}
+
 // 切换标签页
 function switchTab(tab) {
     // 更新按钮状态

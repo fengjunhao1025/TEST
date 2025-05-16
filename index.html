@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>库存管理系统</title>
     <link rel="stylesheet" href="styles.css">
+    <!-- LeanCloud SDK -->
+    <script src="https://cdn1.lncld.net/static/js/3.15.0/av-min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -70,6 +72,12 @@
                     <button type="button" onclick="processBatchData()">批量导入</button>
                 </div>
             </div>
+        </div>
+
+        <!-- 云端同步按钮 -->
+        <div class="form-group" style="margin-bottom: 10px;">
+            <button type="button" onclick="saveToCloud()">保存到云端</button>
+            <button type="button" onclick="loadFromCloud()">从云端加载</button>
         </div>
 
         <!-- 库存查询 -->
